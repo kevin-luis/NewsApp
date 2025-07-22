@@ -4,9 +4,18 @@ build/
 
 # Local configuration file (sdk path, etc)
 local.properties
+.DS_Store # Mac specific
 
 # Log/OS Files
 *.log
+
+# Files for the ART/Dalvik VM
+.dex
+
+# Generated files
+bin/
+gen/
+out/
 
 # Android Studio generated files and folders
 captures/
@@ -14,7 +23,11 @@ captures/
 .cxx/
 *.aab
 *.apk
+*.ap_
 output-metadata.json
+
+# Java class files
+*.class
 
 # IntelliJ
 *.iml
