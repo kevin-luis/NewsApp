@@ -1,4 +1,4 @@
-package com.kevinluis.newsapp.model.remote.retrofit
+package com.kevinluis.newsapp.view.adapter
 
 import android.view.LayoutInflater
 import android.view.ViewGroup
@@ -38,8 +38,8 @@ class NewsAdapter : ListAdapter<ArticlesItem, NewsAdapter.NewsViewHolder>(DIFF_C
 
             // Safe text binding
             binding.tvTitle.text = news.title ?: "Judul tidak tersedia"
-            binding.tvDate.text = news.publishedAt?.let {
-                DateConverter.convertToIndonesianDateModern(it)
+            binding.tvDate.text = news.publishedAt.let {
+                DateConverter.Companion.convertToIndonesianDateModern(it)
             } ?: "Tanggal tidak tersedia"
             binding.tvSource.text = news.source?.name ?: "Sumber tidak diketahui"
             binding.tvAuthor.text = news.author ?: "Penulis tidak diketahui"
