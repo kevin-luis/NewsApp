@@ -12,6 +12,17 @@
         android:layout_height="wrap_content"
         android:paddingBottom="16dp">
 
+        <!-- ProgressBar untuk loading state -->
+        <ProgressBar
+            android:id="@+id/progressBar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:visibility="gone"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
         <!-- ViewPager2 untuk Headline News -->
         <androidx.viewpager2.widget.ViewPager2
             android:id="@+id/vp_headline_news"
@@ -23,7 +34,6 @@
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent" />
 
-        <!-- Option 1: Custom Dots Container (yang sudah ada) -->
         <LinearLayout
             android:id="@+id/list_circle"
             android:layout_width="match_parent"
@@ -34,23 +44,6 @@
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toBottomOf="@+id/vp_headline_news" />
-
-        <!-- Option 2: TabLayout (uncomment jika ingin pakai TabLayout) -->
-        <!--
-        <com.google.android.material.tabs.TabLayout
-            android:id="@+id/tab_layout"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            app:tabBackground="@drawable/dot_selector"
-            app:tabGravity="center"
-            app:tabIndicatorHeight="0dp"
-            app:tabMaxWidth="20dp"
-            app:tabMinWidth="20dp"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/vp_headline_news" />
-        -->
 
         <!-- Title untuk section berita -->
         <TextView
@@ -82,7 +75,7 @@
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toBottomOf="@+id/tv_news_title"
-            tools:listitem="@layout/item_headline_news" />
+            tools:listitem="@layout/item_news" />
 
     </androidx.constraintlayout.widget.ConstraintLayout>
 

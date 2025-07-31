@@ -5,17 +5,14 @@ import retrofit2.Call
 import retrofit2.http.*
 
 interface ApiService {
-    @GET("top-headlines")
+    @GET("top-headlines?country=us")
     fun getTopHeadlines(
-        @Query("country") country: String
+        @Query("apiKey") apiKey: String
     ): Call<NewsResponse>
 
-    @GET("everything")
+    @GET("everything?q=indonesia&language=id&sortBy=publishedAt")
     fun getEverything(
-        @Query("q") query: String,
-        @Query("language") language: String,
-        @Query("excludeDomain") excludeDomain: String,
-        @Query("sortBy") sortBy: String
+        @Query("apiKey") apiKey: String
     ): Call<NewsResponse>
 
 

@@ -10,32 +10,33 @@ import com.bumptech.glide.load.DecodeFormat
 import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.kevinluis.newsapp.R
 import com.kevinluis.newsapp.databinding.ItemHeadlineNewsBinding
+import com.kevinluis.newsapp.model.local.entity.NewsEntity
 import com.kevinluis.newsapp.model.remote.response.ArticlesItem
 import com.kevinluis.newsapp.viewmodel.utils.DateConverter
 
-class HeadlineNewsAdapter : ListAdapter<ArticlesItem, HeadlineNewsAdapter.HeadlineNewsViewHolder>(DIFF_CALLBACK){
+class HeadlineNewsAdapter : ListAdapter<NewsEntity, HeadlineNewsAdapter.HeadlineNewsViewHolder>(DIFF_CALLBACK){
 
     override fun onCreateViewHolder(
         parent: ViewGroup,
         viewType: Int
-    ): HeadlineNewsAdapter.HeadlineNewsViewHolder {
+    ): HeadlineNewsViewHolder {
         val binding = ItemHeadlineNewsBinding.inflate(LayoutInflater.from(parent.context), parent, false)
         return HeadlineNewsViewHolder(binding)
     }
 
     override fun onBindViewHolder(
-        holder: HeadlineNewsAdapter.HeadlineNewsViewHolder,
+        holder: HeadlineNewsViewHolder,
         position: Int
     ) {
-        val headline_news = getItem(position)
-        holder.bind(headline_news)
+        val headlineNews = getItem(position)
+        holder.bind(headlineNews)
     }
 
     class HeadlineNewsViewHolder(val binding: ItemHeadlineNewsBinding) : RecyclerView.ViewHolder(binding.root) {
-        fun bind(news: ArticlesItem) {
+        fun bind(news: NewsEntity) {
             Glide.with(itemView.context)
                 .load(news.urlToImage)
-                .override(300)
+                .override(500)
                 .format(DecodeFormat.PREFER_RGB_565)
                 .diskCacheStrategy(DiskCacheStrategy.ALL)
                 .placeholder(R.drawable.image_placeholder)
@@ -43,23 +44,23 @@ class HeadlineNewsAdapter : ListAdapter<ArticlesItem, HeadlineNewsAdapter.Headli
                 .into(binding.imageViewBackground)
 
             binding.textViewTitle.text = news.title ?: "Judul tidak tersedia"
-            binding.textViewSource.text = news.source?.name ?: "Sumber tidak diketahui"
+            binding.textViewSource.text = news.source ?: "Sumber tidak diketahui"
             binding.textViewDate.text = news.publishedAt?.let { DateConverter.convertToIndonesianDateModern(it) } ?: "Tanggal tidak tersedia"
         }
     }
 
     companion object {
-        val DIFF_CALLBACK = object : DiffUtil.ItemCallback<ArticlesItem> () {
+        val DIFF_CALLBACK = object : DiffUtil.ItemCallback<NewsEntity> () {
             override fun areItemsTheSame(
-                oldItem: ArticlesItem,
-                newItem: ArticlesItem
+                oldItem: NewsEntity,
+                newItem: NewsEntity
             ): Boolean {
                 return oldItem == newItem
             }
 
             override fun areContentsTheSame(
-                oldItem: ArticlesItem,
-                newItem: ArticlesItem
+                oldItem: NewsEntity,
+                newItem: NewsEntity
             ): Boolean {
                 return oldItem == newItem
             }
