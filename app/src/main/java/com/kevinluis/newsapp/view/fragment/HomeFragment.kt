@@ -8,23 +8,24 @@ import androidx.fragment.app.Fragment
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
+import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import androidx.viewpager2.widget.ViewPager2
-import com.google.android.material.tabs.TabLayoutMediator
 import com.kevinluis.newsapp.R
 import com.kevinluis.newsapp.databinding.FragmentHomeBinding
 import com.kevinluis.newsapp.model.remote.response.ArticlesItem
-import com.kevinluis.newsapp.model.remote.response.NewsResponse
-import com.kevinluis.newsapp.model.remote.retrofit.ApiConfig
 import com.kevinluis.newsapp.view.adapter.HeadlineNewsAdapter
 import com.kevinluis.newsapp.view.adapter.NewsAdapter
+import com.kevinluis.newsapp.viewmodel.NewsViewModel
+import com.kevinluis.newsapp.viewmodel.ViewModelFactory
+import com.kevinluis.newsapp.model.Result
+import com.kevinluis.newsapp.model.local.entity.NewsEntity
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
-import retrofit2.Call
-import retrofit2.Callback
-import retrofit2.Response
 
 class HomeFragment : Fragment() {
 
@@ -33,14 +34,25 @@ class HomeFragment : Fragment() {
 
     private lateinit var handler: Handler
     private lateinit var autoScrollRunnable: Runnable
-    private var isAutoScrolling = true
+    private var isAutoScrolling = false
     private var currentPage = 0
     private var totalPages = 0
     private var resumeJob: Job? = null
-
-    // Untuk infinite scroll
-    private val INFINITE_SCROLL_SIZE = 10000
     private lateinit var headlineNewsAdapter: HeadlineNewsAdapter
+    private lateinit var newsAdapter: NewsAdapter
+    private var isDataLoaded = false
+    private var originalNewsData: List<NewsEntity> = emptyList()
+
+    // ViewModel instance - SHARED across fragment lifecycle
+    private val newsViewModel: NewsViewModel by viewModels(
+        ownerProducer = { requireActivity() } // Important: Use Activity scope
+    ) {
+        ViewModelFactory.getInstance(requireActivity())
+    }
+
+    // Current data for comparison
+    private var currentAllNewsData: List<ArticlesItem>? = null
+    private var currentHeadlineData: List<NewsEntity>? = null
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -52,59 +64,196 @@ class HomeFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        Log.d(TAG, "onViewCreated called")
 
+        setupUI()
+        loadDataWithCache()
+    }
+
+    private fun setupUI() {
         setupLayoutManager()
         setupViewPagerTouchHandler()
+        setupSwipeRefresh()
+        setupAdapters()
+    }
+
+    private fun setupAdapters() {
+        // Setup NewsAdapter untuk RecyclerView
+        newsAdapter = NewsAdapter { article ->
+            // Handle item click - navigate to detail
+            Log.d(TAG, "News item clicked: ${article.title}")
+        }
+        binding.rvNews.adapter = newsAdapter
+
+        // Setup HeadlineNewsAdapter untuk ViewPager
+        headlineNewsAdapter = HeadlineNewsAdapter()
+        binding.vpHeadlineNews.adapter = headlineNewsAdapter
+    }
+
+    private fun setupSwipeRefresh() {
+        // Jika menggunakan SwipeRefreshLayout, uncomment dan setup
+        /*
+        binding.swipeRefresh.setOnRefreshListener {
+            refreshData()
+        }
+        */
+    }
+
+    private fun loadDataWithCache() {
+        Log.d(TAG, "Loading data with cache...")
+
+        // ✅ OPTIMASI: Load cached headline news terlebih dahulu
+        val cachedHeadlineNews = newsViewModel.getCachedHeadlineNews()
+        if (cachedHeadlineNews != null && cachedHeadlineNews.isNotEmpty()) {
+            Log.d(TAG, "Found cached headline news, displaying immediately")
+            setHeadlineNewsData(cachedHeadlineNews)
+            currentHeadlineData = cachedHeadlineNews
+        }
+
+        // ✅ OPTIMASI: Load cached all news terlebih dahulu
+        val cachedAllNews = newsViewModel.getCachedAllNews()
+        if (cachedAllNews != null && cachedAllNews.isNotEmpty()) {
+            Log.d(TAG, "Found cached all news, displaying immediately")
+            setNewsData(cachedAllNews)
+            currentAllNewsData = cachedAllNews
+        }
+
+        // Load fresh data (akan menggunakan cache jika valid)
         getAllNews()
         getHeadlineNews()
     }
 
-    private fun getAllNews() {
-        val client = ApiConfig.getApiService().getEverything(QUERY, LANGUAGE, EXCLUDE_DOMAIN, SORTED_BY)
-        client.enqueue(object : Callback<NewsResponse> {
-            override fun onResponse(
-                call: Call<NewsResponse>,
-                response: Response<NewsResponse>
-            ) {
-                if (response.isSuccessful) {
-                    val responseBody = response.body()
-                    if (responseBody != null) {
-                        val articles = responseBody.articles
-                        setNewsData(articles)
+    // ✅ OPTIMASI: Update method getHeadlineNews
+    private fun getHeadlineNews() {
+        newsViewModel.getHeadlineNews().observe(viewLifecycleOwner) { result ->
+            Log.d(TAG, "getHeadlineNews result: ${result?.javaClass?.simpleName}")
+
+            when(result) {
+                is Result.Loading -> {
+                    Log.d(TAG, "Loading headline news...")
+                    // ✅ PERBAIKAN: Hanya show loading jika belum ada cached data
+                    if (currentHeadlineData == null) {
+                        showHeadlineLoading(true)
                     }
-                } else {
-                    Log.e(TAG, "onFailure: ${response.message()}")
+                }
+                is Result.Success -> {
+                    Log.d(TAG, "Success loading headline news: ${result.data.size} items")
+                    showHeadlineLoading(false)
+
+                    // ✅ OPTIMASI: Hanya update UI jika data berbeda
+                    if (currentHeadlineData != result.data) {
+                        setHeadlineNewsData(result.data)
+                        currentHeadlineData = result.data
+                    }
+                    isDataLoaded = true
+                }
+                is Result.Error -> {
+                    Log.e(TAG, "Error loading headline news: ${result.error}")
+                    showHeadlineLoading(false)
+
+                    // ✅ PERBAIKAN: Hanya show error jika tidak ada cached data
+                    if (currentHeadlineData == null) {
+                        showErrorMessage("Terjadi kesalahan: ${result.error}")
+                    }
+                    isDataLoaded = false
+                }
+                null -> {
+                    Log.d(TAG, "Headline news result is null")
                 }
             }
-
-            override fun onFailure(call: Call<NewsResponse>, t: Throwable) {
-                Log.e(TAG, "onFailure: ${t.message}")
-            }
-        })
+        }
     }
 
-    private fun getHeadlineNews() {
-        val client = ApiConfig.getApiService().getTopHeadlines(COUNTRY)
-        client.enqueue(object : Callback<NewsResponse> {
-            override fun onResponse(
-                call: Call<NewsResponse>,
-                response: Response<NewsResponse>
-            ) {
-                if (response.isSuccessful) {
-                    val responseBody = response.body()
-                    if (responseBody != null) {
-                        val articles = responseBody.articles
-                        setHeadlineNewsData(articles)
+    // ✅ OPTIMASI: Update method getAllNews juga
+    private fun getAllNews() {
+        newsViewModel.getAllNewsAlways().observe(viewLifecycleOwner) { result ->
+            Log.d(TAG, "getAllNews result: ${result.javaClass.simpleName}")
+
+            when (result) {
+                is Result.Loading -> {
+                    Log.d(TAG, "Loading all news...")
+                    // Hanya show loading jika belum ada cached data
+                    if (currentAllNewsData == null) {
+                        showAllNewsLoading(true)
                     }
-                } else {
-                    Log.e(TAG, "onFailure: ${response.message()}")
+                }
+                is Result.Success -> {
+                    Log.d(TAG, "Success loading all news: ${result.data.size} items")
+                    showAllNewsLoading(false)
+
+                    // ✅ OPTIMASI: Hanya update UI jika data berbeda
+                    if (currentAllNewsData != result.data) {
+                        setNewsData(result.data)
+                        currentAllNewsData = result.data
+                    }
+                }
+                is Result.Error -> {
+                    Log.e(TAG, "Error loading all news: ${result.error}")
+                    showAllNewsLoading(false)
+
+                    if (currentAllNewsData == null) {
+                        showErrorMessage("Gagal memuat berita: ${result.error}")
+                    }
                 }
             }
+        }
+    }
 
-            override fun onFailure(call: Call<NewsResponse?>, t: Throwable) {
-                Log.e(TAG, "onFailure: ${t.message}")
+    // ✅ TAMBAHKAN: Method untuk refresh semua data
+    fun refreshAllData() {
+        Log.d(TAG, "Refreshing all data...")
+
+        val (allNewsLiveData, headlineNewsLiveData) = newsViewModel.refreshAllData()
+
+        // Observe refresh all news
+        allNewsLiveData.observe(viewLifecycleOwner) { result ->
+            when (result) {
+                is Result.Loading -> showAllNewsLoading(true)
+                is Result.Success -> {
+                    showAllNewsLoading(false)
+                    setNewsData(result.data)
+                    currentAllNewsData = result.data
+                }
+                is Result.Error -> {
+                    showAllNewsLoading(false)
+                    showErrorMessage("Gagal memperbarui semua berita")
+                }
             }
-        })
+        }
+
+        // Observe refresh headline news
+        headlineNewsLiveData.observe(viewLifecycleOwner) { result ->
+            when (result) {
+                is Result.Loading -> showHeadlineLoading(true)
+                is Result.Success -> {
+                    showHeadlineLoading(false)
+                    setHeadlineNewsData(result.data)
+                    currentHeadlineData = result.data
+                    showErrorMessage("Data berhasil diperbarui")
+                }
+                is Result.Error -> {
+                    showHeadlineLoading(false)
+                    showErrorMessage("Gagal memperbarui headline")
+                }
+            }
+        }
+    }
+
+    private fun showAllNewsLoading(show: Boolean) {
+        binding.rvNews.visibility = if (show) View.GONE else View.VISIBLE
+        // binding.swipeRefresh.isRefreshing = show
+    }
+
+    private fun showHeadlineLoading(show: Boolean) {
+        binding.progressBar.visibility = if (show) View.VISIBLE else View.GONE
+        binding.vpHeadlineNews.visibility = if (show) View.INVISIBLE else View.VISIBLE
+        binding.listCircle.visibility = if (show) View.INVISIBLE else View.VISIBLE
+
+        if (show) stopAutoScroll()
+    }
+
+    private fun showErrorMessage(message: String) {
+        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
     }
 
     private fun setupLayoutManager() {
@@ -113,43 +262,69 @@ class HomeFragment : Fragment() {
     }
 
     private fun setNewsData(news: List<ArticlesItem>) {
-        val newsAdapter = NewsAdapter()
-        newsAdapter.submitList(news)
-        binding.rvNews.adapter = newsAdapter
+        Log.d(TAG, "Setting news data: ${news.size} items")
+        newsAdapter.submitList(news.toList()) // Create new list to force update
     }
 
-    private fun setHeadlineNewsData(news: List<ArticlesItem>) {
-        if (news.isEmpty()) return
-
-        totalPages = news.size
-        headlineNewsAdapter = HeadlineNewsAdapter()
-
-        // Untuk infinite scroll, buat adapter dengan data yang diperbanyak
-        val infiniteList = mutableListOf<ArticlesItem>()
-        repeat(INFINITE_SCROLL_SIZE / news.size + 1) {
-            infiniteList.addAll(news)
+    private fun setHeadlineNewsData(news: List<NewsEntity>) {
+        if (news.isEmpty()) {
+            Log.w(TAG, "Headline news is empty")
+            return
         }
 
-        headlineNewsAdapter.submitList(infiniteList)
-        binding.vpHeadlineNews.adapter = headlineNewsAdapter
+        Log.d(TAG, "Setting headline news data: ${news.size} items")
+        originalNewsData = news
+        totalPages = news.size
 
-        // Set posisi awal ke tengah untuk infinite scroll
-        val startPosition = INFINITE_SCROLL_SIZE / 2
-        binding.vpHeadlineNews.setCurrentItem(startPosition, false)
-        currentPage = startPosition
+        headlineNewsAdapter.submitList(news.toList()) // Create new list to force update
+
+        currentPage = 0
+        binding.vpHeadlineNews.setCurrentItem(0, false)
 
         setupViewPagerCallback()
-        setupTabLayoutIndicator(news.size)
-        startAutoScroll()
+        setupCustomDots(news.size)
+
+        binding.vpHeadlineNews.visibility = View.VISIBLE
+        binding.listCircle.visibility = View.VISIBLE
+
+        // Start auto scroll dengan delay
+        lifecycleScope.launch {
+            delay(INITIAL_DELAY)
+            if (isAdded && _binding != null && totalPages > 1) {
+                startAutoScroll()
+            }
+        }
+    }
+
+    // Method untuk manual refresh
+    fun refreshData() {
+        Log.d(TAG, "Manual refresh triggered")
+
+        newsViewModel.refreshAllNews().observe(viewLifecycleOwner) { result ->
+            when (result) {
+                is Result.Loading -> showAllNewsLoading(true)
+                is Result.Success -> {
+                    showAllNewsLoading(false)
+                    setNewsData(result.data)
+                    currentAllNewsData = result.data
+                    showErrorMessage("Data berhasil diperbarui")
+                }
+                is Result.Error -> {
+                    showAllNewsLoading(false)
+                    showErrorMessage("Gagal memperbarui data")
+                }
+            }
+        }
+
+        // Refresh headline news juga
+        getHeadlineNews()
     }
 
     private fun setupViewPagerCallback() {
         binding.vpHeadlineNews.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
             override fun onPageSelected(position: Int) {
                 currentPage = position
-                // Update indikator berdasarkan posisi real (modulo)
-                val realPosition = position % totalPages
-                updateIndicator(realPosition)
+                updateIndicator(position)
                 super.onPageSelected(position)
             }
 
@@ -157,26 +332,14 @@ class HomeFragment : Fragment() {
                 super.onPageScrollStateChanged(state)
                 when (state) {
                     ViewPager2.SCROLL_STATE_DRAGGING -> {
-                        // User mulai drag, pause auto scroll
                         pauseAutoScroll()
                     }
                     ViewPager2.SCROLL_STATE_IDLE -> {
-                        // User selesai drag, resume auto scroll setelah delay
                         resumeAutoScrollWithDelay()
                     }
                 }
             }
         })
-    }
-
-    private fun setupTabLayoutIndicator(size: Int) {
-        // Jika Anda menggunakan TabLayout, gunakan TabLayoutMediator
-        // TabLayoutMediator(binding.tabLayout, binding.vpHeadlineNews) { tab, position ->
-        //     // Tab akan otomatis sync dengan ViewPager2
-        // }.attach()
-
-        // Atau tetap gunakan custom dots seperti sekarang
-        setupCustomDots(size)
     }
 
     private fun setupCustomDots(size: Int) {
@@ -210,12 +373,12 @@ class HomeFragment : Fragment() {
     }
 
     private fun setupViewPagerTouchHandler() {
-        // Disable user input saat auto scroll (opsional)
-        // binding.vpHeadlineNews.isUserInputEnabled = true
+        binding.vpHeadlineNews.isUserInputEnabled = true
     }
 
     private fun startAutoScroll() {
-        // Stop any existing auto scroll first
+        if (!isDataLoaded) return
+
         stopAutoScroll()
 
         if (!::handler.isInitialized) {
@@ -226,7 +389,7 @@ class HomeFragment : Fragment() {
         autoScrollRunnable = object : Runnable {
             override fun run() {
                 if (isAutoScrolling && totalPages > 1 && isAdded && _binding != null) {
-                    currentPage++
+                    currentPage = if (currentPage >= totalPages - 1) 0 else currentPage + 1
                     binding.vpHeadlineNews.setCurrentItem(currentPage, true)
                     handler.postDelayed(this, AUTO_SCROLL_DELAY)
                 }
@@ -248,11 +411,10 @@ class HomeFragment : Fragment() {
     }
 
     private fun resumeAutoScrollWithDelay() {
-        // Cancel any existing resume task
         resumeJob?.cancel()
         resumeJob = lifecycleScope.launch {
             delay(RESUME_DELAY)
-            if (isAdded && _binding != null && totalPages > 1) {
+            if (isAdded && _binding != null && totalPages > 1 && isDataLoaded) {
                 startAutoScroll()
             }
         }
@@ -260,18 +422,26 @@ class HomeFragment : Fragment() {
 
     override fun onResume() {
         super.onResume()
-        if (totalPages > 1) {
-            startAutoScroll()
+        Log.d(TAG, "Fragment resumed")
+        if (totalPages > 1 && isDataLoaded) {
+            lifecycleScope.launch {
+                delay(500)
+                if (isAdded && _binding != null) {
+                    startAutoScroll()
+                }
+            }
         }
     }
 
     override fun onPause() {
         super.onPause()
+        Log.d(TAG, "Fragment paused")
         stopAutoScroll()
     }
 
     override fun onDestroyView() {
         super.onDestroyView()
+        Log.d(TAG, "Fragment view destroyed")
         stopAutoScroll()
         if (::handler.isInitialized) {
             handler.removeCallbacksAndMessages(null)
@@ -280,15 +450,9 @@ class HomeFragment : Fragment() {
     }
 
     companion object {
-        private const val COUNTRY = "us"
         private const val TAG = "HomeFragment"
-        private const val QUERY = "Indonesia"
-        private const val LANGUAGE = "id"
-        private const val EXCLUDE_DOMAIN = "Katalogpromosi.com"
-        private const val SORTED_BY = "publishedAt"
-
-        // Auto scroll settings
-        private const val AUTO_SCROLL_DELAY = 4000L // 4 detik (lebih lambat)
-        private const val RESUME_DELAY = 3000L // 3 detik setelah user stop interaksi
+        private const val AUTO_SCROLL_DELAY = 4000L
+        private const val RESUME_DELAY = 3000L
+        private const val INITIAL_DELAY = 1500L
     }
 }

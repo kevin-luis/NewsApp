@@ -13,48 +13,76 @@ import com.kevinluis.newsapp.databinding.ItemNewsBinding
 import com.kevinluis.newsapp.model.remote.response.ArticlesItem
 import com.kevinluis.newsapp.viewmodel.utils.DateConverter
 
-class NewsAdapter : ListAdapter<ArticlesItem, NewsAdapter.NewsViewHolder>(DIFF_CALLBACK) {
+class NewsAdapter(
+    private val onItemClick: ((ArticlesItem) -> Unit)? = null
+) : ListAdapter<ArticlesItem, NewsAdapter.NewsViewHolder>(DIFF_CALLBACK) {
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): NewsViewHolder {
         val binding = ItemNewsBinding.inflate(LayoutInflater.from(parent.context), parent, false)
-        return NewsViewHolder(binding)
+        return NewsViewHolder(binding, onItemClick)
     }
 
     override fun onBindViewHolder(holder: NewsViewHolder, position: Int) {
         val news = getItem(position)
-        holder.bind(news)
+        if (news != null) {
+            holder.bind(news)
+        }
     }
 
-    class NewsViewHolder(val binding: ItemNewsBinding) : RecyclerView.ViewHolder(binding.root){
+    class NewsViewHolder(
+        private val binding: ItemNewsBinding,
+        private val onItemClick: ((ArticlesItem) -> Unit)?
+    ) : RecyclerView.ViewHolder(binding.root) {
+
         fun bind(news: ArticlesItem) {
-            // Load image dengan fallback
+            // Set click listener
+            binding.root.setOnClickListener {
+                onItemClick?.invoke(news)
+            }
+
+            // Load image dengan error handling yang lebih baik
             Glide.with(itemView.context)
                 .load(news.urlToImage)
-                .override(300)
+                .override(400, 250) // Ukuran yang lebih proporsional
                 .format(DecodeFormat.PREFER_RGB_565)
                 .diskCacheStrategy(DiskCacheStrategy.ALL)
-                .placeholder(R.drawable.image_placeholder) // Tambahkan placeholder
-                .error(R.drawable.broken_image) // Tambahkan error image
+                .placeholder(R.drawable.image_placeholder)
+                .error(R.drawable.broken_image)
                 .into(binding.ivNews)
 
-            // Safe text binding
-            binding.tvTitle.text = news.title ?: "Judul tidak tersedia"
-            binding.tvDate.text = news.publishedAt.let {
-                DateConverter.Companion.convertToIndonesianDateModern(it)
-            } ?: "Tanggal tidak tersedia"
-            binding.tvSource.text = news.source?.name ?: "Sumber tidak diketahui"
-            binding.tvAuthor.text = news.author ?: "Penulis tidak diketahui"
-        }
+            // Safe text binding dengan null safety
+            binding.tvTitle.text = news.title?.takeIf { it.isNotBlank() }
+                ?: "Judul tidak tersedia"
 
+            binding.tvDate.text = try {
+                news.publishedAt?.let { publishedAt ->
+                    DateConverter.convertToIndonesianDateModern(publishedAt)
+                } ?: "Tanggal tidak tersedia"
+            } catch (e: Exception) {
+                "Tanggal tidak valid"
+            }
+
+            binding.tvSource.text = news.source?.name?.takeIf { it.isNotBlank() }
+                ?: "Sumber tidak diketahui"
+
+            binding.tvAuthor.text = news.author?.takeIf { it.isNotBlank() }
+                ?: "Penulis tidak diketahui"
+        }
     }
 
     companion object {
-        val DIFF_CALLBACK = object : DiffUtil.ItemCallback<ArticlesItem> () {
+        val DIFF_CALLBACK = object : DiffUtil.ItemCallback<ArticlesItem>() {
             override fun areItemsTheSame(oldItem: ArticlesItem, newItem: ArticlesItem): Boolean {
-                return  oldItem == newItem
+                // Gunakan URL sebagai identifier unik karena ArticlesItem mungkin tidak punya ID
+                return oldItem.url == newItem.url
             }
 
             override fun areContentsTheSame(oldItem: ArticlesItem, newItem: ArticlesItem): Boolean {
-                return oldItem == newItem
+                return oldItem.title == newItem.title &&
+                        oldItem.publishedAt == newItem.publishedAt &&
+                        oldItem.urlToImage == newItem.urlToImage &&
+                        oldItem.source?.name == newItem.source?.name &&
+                        oldItem.author == newItem.author
             }
         }
     }
