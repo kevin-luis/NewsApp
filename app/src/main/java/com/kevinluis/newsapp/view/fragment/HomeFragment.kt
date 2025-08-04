@@ -11,8 +11,8 @@ import android.view.ViewGroup
 import android.widget.Toast
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
+import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import androidx.viewpager2.widget.ViewPager2
 import com.kevinluis.newsapp.R
 import com.kevinluis.newsapp.databinding.FragmentHomeBinding
@@ -41,18 +41,14 @@ class HomeFragment : Fragment() {
     private lateinit var headlineNewsAdapter: HeadlineNewsAdapter
     private lateinit var newsAdapter: NewsAdapter
     private var isDataLoaded = false
-    private var originalNewsData: List<NewsEntity> = emptyList()
 
-    // ViewModel instance - SHARED across fragment lifecycle
-    private val newsViewModel: NewsViewModel by viewModels(
-        ownerProducer = { requireActivity() } // Important: Use Activity scope
-    ) {
+    private val newsViewModel: NewsViewModel by viewModels {
         ViewModelFactory.getInstance(requireActivity())
     }
 
-    // Current data for comparison
-    private var currentAllNewsData: List<ArticlesItem>? = null
-    private var currentHeadlineData: List<NewsEntity>? = null
+    // Flag untuk tracking observer registration
+    private var observersRegistered = false
+    private var isFirstLoad = true
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -67,181 +63,184 @@ class HomeFragment : Fragment() {
         Log.d(TAG, "onViewCreated called")
 
         setupUI()
+
+        // ✅ PERBAIKAN 3: Hanya register observer sekali
+        if (!observersRegistered) {
+            setupObservers()
+            observersRegistered = true
+        }
+
         loadDataWithCache()
     }
 
     private fun setupUI() {
         setupLayoutManager()
         setupViewPagerTouchHandler()
-        setupSwipeRefresh()
         setupAdapters()
     }
 
     private fun setupAdapters() {
-        // Setup NewsAdapter untuk RecyclerView
+        // Setup NewsAdapter dengan click listener
         newsAdapter = NewsAdapter { article ->
-            // Handle item click - navigate to detail
-            Log.d(TAG, "News item clicked: ${article.title}")
+            navigateToDetailNews(article)
         }
         binding.rvNews.adapter = newsAdapter
 
-        // Setup HeadlineNewsAdapter untuk ViewPager
-        headlineNewsAdapter = HeadlineNewsAdapter()
+        // Setup HeadlineNewsAdapter dengan click listener
+        headlineNewsAdapter = HeadlineNewsAdapter { newsEntity ->
+            navigateToDetailNews(newsEntity)
+        }
         binding.vpHeadlineNews.adapter = headlineNewsAdapter
     }
 
-    private fun setupSwipeRefresh() {
-        // Jika menggunakan SwipeRefreshLayout, uncomment dan setup
-        /*
-        binding.swipeRefresh.setOnRefreshListener {
-            refreshData()
+    private fun navigateToDetailNews(article: ArticlesItem) {
+        try {
+            Log.d(TAG, "Navigating to detail news: ${article.title}")
+
+            val bundle = DetailNewsFragment.newInstanceFromArticle(article)
+
+            // Cek apakah navigation controller ada
+            if (findNavController().currentDestination?.id == R.id.navigation_home) {
+                findNavController().navigate(
+                    R.id.action_home_to_detail,
+                    bundle
+                )
+            } else {
+                Log.w(TAG, "Not in home fragment, cannot navigate")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error navigating to detail", e)
+            showErrorMessage("Tidak dapat membuka detail berita")
         }
-        */
+    }
+
+    private fun navigateToDetailNews(newsEntity: NewsEntity) {
+        try {
+            Log.d(TAG, "Navigating to detail news: ${newsEntity.title}")
+
+            val bundle = DetailNewsFragment.newInstanceFromEntity(newsEntity)
+
+            // Cek apakah navigation controller ada
+            if (findNavController().currentDestination?.id == R.id.navigation_home) {
+                findNavController().navigate(
+                    R.id.action_home_to_detail,
+                    bundle
+                )
+            } else {
+                Log.w(TAG, "Not in home fragment, cannot navigate")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error navigating to detail", e)
+            showErrorMessage("Tidak dapat membuka detail berita")
+        }
+    }
+
+    // Pisahkan setup observer dari loading data
+    private fun setupObservers() {
+        // Observer untuk headline news
+        newsViewModel.getHeadlineNews().observe(viewLifecycleOwner) { result ->
+            handleHeadlineNewsResult(result)
+        }
+
+        // Observer untuk all news
+        newsViewModel.getAllNewsAlways().observe(viewLifecycleOwner) { result ->
+            handleAllNewsResult(result)
+        }
+    }
+
+    private fun handleHeadlineNewsResult(result: Result<List<NewsEntity>>?) {
+        Log.d(TAG, "handleHeadlineNewsResult: ${result?.javaClass?.simpleName}")
+
+        when(result) {
+            is Result.Loading -> {
+                Log.d(TAG, "Loading headline news...")
+                // ✅ OPTIMASI: Hanya show loading pada first load
+                if (isFirstLoad) {
+                    showHeadlineLoading(true)
+                }
+            }
+            is Result.Success -> {
+                Log.d(TAG, "Success loading headline news: ${result.data.size} items")
+                showHeadlineLoading(false)
+                setHeadlineNewsData(result.data)
+                isDataLoaded = true
+                isFirstLoad = false
+            }
+            is Result.Error -> {
+                Log.e(TAG, "Error loading headline news: ${result.error}")
+                showHeadlineLoading(false)
+
+                // Hanya show error jika first load
+                if (isFirstLoad) {
+                    showErrorMessage("Terjadi kesalahan: ${result.error}")
+                }
+                isDataLoaded = false
+            }
+            null -> {
+                Log.d(TAG, "Headline news result is null")
+            }
+        }
+    }
+
+    private fun handleAllNewsResult(result: Result<List<ArticlesItem>>) {
+        Log.d(TAG, "handleAllNewsResult: ${result.javaClass.simpleName}")
+
+        when (result) {
+            is Result.Loading -> {
+                Log.d(TAG, "Loading all news...")
+                if (isFirstLoad) {
+                    showAllNewsLoading(true)
+                }
+            }
+            is Result.Success -> {
+                Log.d(TAG, "Success loading all news: ${result.data.size} items")
+                showAllNewsLoading(false)
+                setNewsData(result.data)
+            }
+            is Result.Error -> {
+                Log.e(TAG, "Error loading all news: ${result.error}")
+                showAllNewsLoading(false)
+
+                if (isFirstLoad) {
+                    showErrorMessage("Gagal memuat berita: ${result.error}")
+                }
+            }
+        }
     }
 
     private fun loadDataWithCache() {
         Log.d(TAG, "Loading data with cache...")
 
-        // ✅ OPTIMASI: Load cached headline news terlebih dahulu
-        val cachedHeadlineNews = newsViewModel.getCachedHeadlineNews()
-        if (cachedHeadlineNews != null && cachedHeadlineNews.isNotEmpty()) {
-            Log.d(TAG, "Found cached headline news, displaying immediately")
-            setHeadlineNewsData(cachedHeadlineNews)
-            currentHeadlineData = cachedHeadlineNews
-        }
-
-        // ✅ OPTIMASI: Load cached all news terlebih dahulu
-        val cachedAllNews = newsViewModel.getCachedAllNews()
-        if (cachedAllNews != null && cachedAllNews.isNotEmpty()) {
-            Log.d(TAG, "Found cached all news, displaying immediately")
-            setNewsData(cachedAllNews)
-            currentAllNewsData = cachedAllNews
-        }
-
-        // Load fresh data (akan menggunakan cache jika valid)
-        getAllNews()
-        getHeadlineNews()
-    }
-
-    // ✅ OPTIMASI: Update method getHeadlineNews
-    private fun getHeadlineNews() {
-        newsViewModel.getHeadlineNews().observe(viewLifecycleOwner) { result ->
-            Log.d(TAG, "getHeadlineNews result: ${result?.javaClass?.simpleName}")
-
-            when(result) {
-                is Result.Loading -> {
-                    Log.d(TAG, "Loading headline news...")
-                    // ✅ PERBAIKAN: Hanya show loading jika belum ada cached data
-                    if (currentHeadlineData == null) {
-                        showHeadlineLoading(true)
-                    }
-                }
-                is Result.Success -> {
-                    Log.d(TAG, "Success loading headline news: ${result.data.size} items")
-                    showHeadlineLoading(false)
-
-                    // ✅ OPTIMASI: Hanya update UI jika data berbeda
-                    if (currentHeadlineData != result.data) {
-                        setHeadlineNewsData(result.data)
-                        currentHeadlineData = result.data
-                    }
-                    isDataLoaded = true
-                }
-                is Result.Error -> {
-                    Log.e(TAG, "Error loading headline news: ${result.error}")
-                    showHeadlineLoading(false)
-
-                    // ✅ PERBAIKAN: Hanya show error jika tidak ada cached data
-                    if (currentHeadlineData == null) {
-                        showErrorMessage("Terjadi kesalahan: ${result.error}")
-                    }
-                    isDataLoaded = false
-                }
-                null -> {
-                    Log.d(TAG, "Headline news result is null")
-                }
+        //Load cached data secara synchronous untuk UI yang responsive
+        lifecycleScope.launch {
+            // Load cached headline news
+            val cachedHeadlineNews = newsViewModel.getCachedHeadlineNews()
+            if (cachedHeadlineNews != null && cachedHeadlineNews.isNotEmpty()) {
+                Log.d(TAG, "Found cached headline news, displaying immediately")
+                setHeadlineNewsData(cachedHeadlineNews)
+                isDataLoaded = true
+                isFirstLoad = false
             }
-        }
-    }
 
-    // ✅ OPTIMASI: Update method getAllNews juga
-    private fun getAllNews() {
-        newsViewModel.getAllNewsAlways().observe(viewLifecycleOwner) { result ->
-            Log.d(TAG, "getAllNews result: ${result.javaClass.simpleName}")
-
-            when (result) {
-                is Result.Loading -> {
-                    Log.d(TAG, "Loading all news...")
-                    // Hanya show loading jika belum ada cached data
-                    if (currentAllNewsData == null) {
-                        showAllNewsLoading(true)
-                    }
-                }
-                is Result.Success -> {
-                    Log.d(TAG, "Success loading all news: ${result.data.size} items")
-                    showAllNewsLoading(false)
-
-                    // ✅ OPTIMASI: Hanya update UI jika data berbeda
-                    if (currentAllNewsData != result.data) {
-                        setNewsData(result.data)
-                        currentAllNewsData = result.data
-                    }
-                }
-                is Result.Error -> {
-                    Log.e(TAG, "Error loading all news: ${result.error}")
-                    showAllNewsLoading(false)
-
-                    if (currentAllNewsData == null) {
-                        showErrorMessage("Gagal memuat berita: ${result.error}")
-                    }
-                }
+            // Load cached all news
+            val cachedAllNews = newsViewModel.getCachedAllNews()
+            if (cachedAllNews != null && cachedAllNews.isNotEmpty()) {
+                Log.d(TAG, "Found cached all news, displaying immediately")
+                setNewsData(cachedAllNews)
             }
-        }
-    }
 
-    // ✅ TAMBAHKAN: Method untuk refresh semua data
-    fun refreshAllData() {
-        Log.d(TAG, "Refreshing all data...")
-
-        val (allNewsLiveData, headlineNewsLiveData) = newsViewModel.refreshAllData()
-
-        // Observe refresh all news
-        allNewsLiveData.observe(viewLifecycleOwner) { result ->
-            when (result) {
-                is Result.Loading -> showAllNewsLoading(true)
-                is Result.Success -> {
-                    showAllNewsLoading(false)
-                    setNewsData(result.data)
-                    currentAllNewsData = result.data
-                }
-                is Result.Error -> {
-                    showAllNewsLoading(false)
-                    showErrorMessage("Gagal memperbarui semua berita")
-                }
-            }
-        }
-
-        // Observe refresh headline news
-        headlineNewsLiveData.observe(viewLifecycleOwner) { result ->
-            when (result) {
-                is Result.Loading -> showHeadlineLoading(true)
-                is Result.Success -> {
-                    showHeadlineLoading(false)
-                    setHeadlineNewsData(result.data)
-                    currentHeadlineData = result.data
-                    showErrorMessage("Data berhasil diperbarui")
-                }
-                is Result.Error -> {
-                    showHeadlineLoading(false)
-                    showErrorMessage("Gagal memperbarui headline")
-                }
+            // Trigger fresh data load hanya jika cache expired
+            if (!newsViewModel.isHeadlineNewsCacheValid() || !newsViewModel.isAllNewsCacheValid()) {
+                Log.d(TAG, "Cache expired, triggering fresh data load")
+                // Observer akan handle hasil dari fresh data
+                newsViewModel.triggerDataLoad()
             }
         }
     }
 
     private fun showAllNewsLoading(show: Boolean) {
-        binding.rvNews.visibility = if (show) View.GONE else View.VISIBLE
-        // binding.swipeRefresh.isRefreshing = show
+        binding.progressBarAllNews.visibility = if (show) View.VISIBLE else View.GONE
+        binding.rvNews.visibility = if (show) View.INVISIBLE else View.VISIBLE
     }
 
     private fun showHeadlineLoading(show: Boolean) {
@@ -253,7 +252,10 @@ class HomeFragment : Fragment() {
     }
 
     private fun showErrorMessage(message: String) {
-        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        // Check jika fragment masih attached
+        if (isAdded && _binding != null) {
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun setupLayoutManager() {
@@ -263,7 +265,9 @@ class HomeFragment : Fragment() {
 
     private fun setNewsData(news: List<ArticlesItem>) {
         Log.d(TAG, "Setting news data: ${news.size} items")
-        newsAdapter.submitList(news.toList()) // Create new list to force update
+        if (::newsAdapter.isInitialized) {
+            newsAdapter.submitList(news.toList()) // Create new list to force update
+        }
     }
 
     private fun setHeadlineNewsData(news: List<NewsEntity>) {
@@ -273,13 +277,14 @@ class HomeFragment : Fragment() {
         }
 
         Log.d(TAG, "Setting headline news data: ${news.size} items")
-        originalNewsData = news
         totalPages = news.size
 
-        headlineNewsAdapter.submitList(news.toList()) // Create new list to force update
+        if (::headlineNewsAdapter.isInitialized) {
+            headlineNewsAdapter.submitList(news.toList()) // Create new list to force update
+        }
 
         currentPage = 0
-        binding.vpHeadlineNews.setCurrentItem(0, false)
+        binding.vpHeadlineNews.setCurrentItem(0, false) // false untuk smooth navigation
 
         setupViewPagerCallback()
         setupCustomDots(news.size)
@@ -287,37 +292,15 @@ class HomeFragment : Fragment() {
         binding.vpHeadlineNews.visibility = View.VISIBLE
         binding.listCircle.visibility = View.VISIBLE
 
-        // Start auto scroll dengan delay
-        lifecycleScope.launch {
-            delay(INITIAL_DELAY)
-            if (isAdded && _binding != null && totalPages > 1) {
-                startAutoScroll()
-            }
-        }
-    }
-
-    // Method untuk manual refresh
-    fun refreshData() {
-        Log.d(TAG, "Manual refresh triggered")
-
-        newsViewModel.refreshAllNews().observe(viewLifecycleOwner) { result ->
-            when (result) {
-                is Result.Loading -> showAllNewsLoading(true)
-                is Result.Success -> {
-                    showAllNewsLoading(false)
-                    setNewsData(result.data)
-                    currentAllNewsData = result.data
-                    showErrorMessage("Data berhasil diperbarui")
-                }
-                is Result.Error -> {
-                    showAllNewsLoading(false)
-                    showErrorMessage("Gagal memperbarui data")
+        // Start auto scroll dengan delay yang lebih pendek
+        if (totalPages > 1) {
+            lifecycleScope.launch {
+                delay(INITIAL_DELAY)
+                if (isAdded && _binding != null) {
+                    startAutoScroll()
                 }
             }
         }
-
-        // Refresh headline news juga
-        getHeadlineNews()
     }
 
     private fun setupViewPagerCallback() {
@@ -423,9 +406,11 @@ class HomeFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         Log.d(TAG, "Fragment resumed")
+
+        // ✅ PERBAIKAN 7: Hanya start auto scroll jika ada data
         if (totalPages > 1 && isDataLoaded) {
             lifecycleScope.launch {
-                delay(500)
+                delay(300) // Delay lebih pendek
                 if (isAdded && _binding != null) {
                     startAutoScroll()
                 }
@@ -449,10 +434,17 @@ class HomeFragment : Fragment() {
         _binding = null
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        //Reset observer flag ketika fragment destroyed
+        observersRegistered = false
+        isFirstLoad = true
+    }
+
     companion object {
         private const val TAG = "HomeFragment"
         private const val AUTO_SCROLL_DELAY = 4000L
-        private const val RESUME_DELAY = 3000L
-        private const val INITIAL_DELAY = 1500L
+        private const val RESUME_DELAY = 2000L // Dipercepat
+        private const val INITIAL_DELAY = 1000L // Dipercepat
     }
 }

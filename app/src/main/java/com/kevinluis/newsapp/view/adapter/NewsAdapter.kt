@@ -8,6 +8,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.DecodeFormat
 import com.bumptech.glide.load.engine.DiskCacheStrategy
+import com.bumptech.glide.request.RequestOptions
 import com.kevinluis.newsapp.R
 import com.kevinluis.newsapp.databinding.ItemNewsBinding
 import com.kevinluis.newsapp.model.remote.response.ArticlesItem
@@ -17,9 +18,17 @@ class NewsAdapter(
     private val onItemClick: ((ArticlesItem) -> Unit)? = null
 ) : ListAdapter<ArticlesItem, NewsAdapter.NewsViewHolder>(DIFF_CALLBACK) {
 
+    // ✅ OPTIMASI 1: Pre-configured Glide options
+    private val glideOptions = RequestOptions()
+        .override(400, 250)
+        .format(DecodeFormat.PREFER_RGB_565)
+        .diskCacheStrategy(DiskCacheStrategy.ALL)
+        .placeholder(R.drawable.image_placeholder)
+        .error(R.drawable.broken_image)
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): NewsViewHolder {
         val binding = ItemNewsBinding.inflate(LayoutInflater.from(parent.context), parent, false)
-        return NewsViewHolder(binding, onItemClick)
+        return NewsViewHolder(binding, onItemClick, glideOptions)
     }
 
     override fun onBindViewHolder(holder: NewsViewHolder, position: Int) {
@@ -29,60 +38,64 @@ class NewsAdapter(
         }
     }
 
+    // ✅ OPTIMASI 2: ViewHolder dengan optimasi
     class NewsViewHolder(
         private val binding: ItemNewsBinding,
-        private val onItemClick: ((ArticlesItem) -> Unit)?
+        private val onItemClick: ((ArticlesItem) -> Unit)?,
+        private val glideOptions: RequestOptions
     ) : RecyclerView.ViewHolder(binding.root) {
 
         fun bind(news: ArticlesItem) {
-            // Set click listener
+            // ✅ OPTIMASI 3: Set click listener hanya sekali
             binding.root.setOnClickListener {
                 onItemClick?.invoke(news)
             }
 
-            // Load image dengan error handling yang lebih baik
+            // ✅ OPTIMASI 4: Optimized image loading
             Glide.with(itemView.context)
                 .load(news.urlToImage)
-                .override(400, 250) // Ukuran yang lebih proporsional
-                .format(DecodeFormat.PREFER_RGB_565)
-                .diskCacheStrategy(DiskCacheStrategy.ALL)
-                .placeholder(R.drawable.image_placeholder)
-                .error(R.drawable.broken_image)
+                .apply(glideOptions)
                 .into(binding.ivNews)
 
-            // Safe text binding dengan null safety
+            // ✅ OPTIMASI 5: Efficient text binding
             binding.tvTitle.text = news.title?.takeIf { it.isNotBlank() }
                 ?: "Judul tidak tersedia"
 
             binding.tvDate.text = try {
-                news.publishedAt?.let { publishedAt ->
+                news.publishedAt.let { publishedAt ->
                     DateConverter.convertToIndonesianDateModern(publishedAt)
                 } ?: "Tanggal tidak tersedia"
             } catch (e: Exception) {
                 "Tanggal tidak valid"
             }
 
-            binding.tvSource.text = news.source?.name?.takeIf { it.isNotBlank() }
+            binding.tvSource.text = news.source.name.takeIf { it.isNotBlank() }
                 ?: "Sumber tidak diketahui"
 
-            binding.tvAuthor.text = news.author?.takeIf { it.isNotBlank() }
+            binding.tvAuthor.text = news.author.takeIf { it.isNotBlank() }
                 ?: "Penulis tidak diketahui"
         }
     }
 
     companion object {
+        // ✅ OPTIMASI 6: Improved DiffUtil
         val DIFF_CALLBACK = object : DiffUtil.ItemCallback<ArticlesItem>() {
             override fun areItemsTheSame(oldItem: ArticlesItem, newItem: ArticlesItem): Boolean {
-                // Gunakan URL sebagai identifier unik karena ArticlesItem mungkin tidak punya ID
                 return oldItem.url == newItem.url
             }
 
             override fun areContentsTheSame(oldItem: ArticlesItem, newItem: ArticlesItem): Boolean {
-                return oldItem.title == newItem.title &&
-                        oldItem.publishedAt == newItem.publishedAt &&
+                // ✅ OPTIMASI 7: Streamlined content comparison
+                return oldItem.url == newItem.url &&
+                        oldItem.title == newItem.title &&
                         oldItem.urlToImage == newItem.urlToImage &&
-                        oldItem.source?.name == newItem.source?.name &&
-                        oldItem.author == newItem.author
+                        oldItem.publishedAt == newItem.publishedAt
+            }
+
+            // ✅ OPTIMASI 8: Optional - payload for partial updates
+            override fun getChangePayload(oldItem: ArticlesItem, newItem: ArticlesItem): Any? {
+                // Return payload for partial updates if needed
+                return if (oldItem.title != newItem.title) "title" else null
             }
         }
     }

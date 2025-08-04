@@ -14,6 +14,4 @@ interface ApiService {
     fun getEverything(
         @Query("apiKey") apiKey: String
     ): Call<NewsResponse>
-
-
 }

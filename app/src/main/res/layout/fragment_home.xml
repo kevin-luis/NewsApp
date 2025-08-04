@@ -12,27 +12,81 @@
         android:layout_height="wrap_content"
         android:paddingBottom="16dp">
 
-        <!-- ProgressBar untuk loading state -->
+        <!-- Header App dengan Logo dan Nama -->
+        <LinearLayout
+            android:id="@+id/ll_app_header"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:layout_marginTop="24dp"
+            android:layout_marginEnd="16dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent">
+
+            <!-- Logo App -->
+            <ImageView
+                android:id="@+id/iv_app_logo"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:layout_marginEnd="12dp"
+                android:scaleType="fitCenter"
+                android:src="@mipmap/ic_launcher_round"
+                android:contentDescription="App Logo" />
+
+            <!-- Nama App -->
+            <TextView
+                android:id="@+id/tv_app_name"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Mandiri News"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                android:textColor="@color/black" />
+
+        </LinearLayout>
+
+        <!-- Title untuk Berita Terkini -->
+        <TextView
+            android:id="@+id/tv_headline_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:layout_marginTop="16dp"
+            android:layout_marginEnd="16dp"
+            android:text="Berita Terkini"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:textColor="@color/black"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/ll_app_header" />
+
+        <!-- ProgressBar untuk headline news loading -->
         <ProgressBar
             android:id="@+id/progressBar"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:visibility="gone"
-            app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toTopOf="parent" />
+            app:layout_constraintBottom_toBottomOf="@+id/vp_headline_news"
+            app:layout_constraintEnd_toEndOf="@+id/vp_headline_news"
+            app:layout_constraintStart_toStartOf="@+id/vp_headline_news"
+            app:layout_constraintTop_toTopOf="@+id/vp_headline_news" />
 
         <!-- ViewPager2 untuk Headline News -->
         <androidx.viewpager2.widget.ViewPager2
             android:id="@+id/vp_headline_news"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
             android:clipToPadding="false"
             android:clipChildren="false"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toTopOf="parent" />
+            app:layout_constraintTop_toBottomOf="@+id/tv_headline_title" />
 
         <LinearLayout
             android:id="@+id/list_circle"
@@ -60,6 +114,17 @@
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toBottomOf="@+id/list_circle" />
+
+        <!-- ProgressBar untuk all news loading -->
+        <ProgressBar
+            android:id="@+id/progressBarAllNews"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="32dp"
+            android:visibility="gone"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/tv_news_title" />
 
         <!-- RecyclerView untuk daftar berita -->
         <androidx.recyclerview.widget.RecyclerView
